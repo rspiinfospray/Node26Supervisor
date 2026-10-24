@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.idea/
+data/*.json
+data/*.tmp
+data/*.pid
+.env
+npm-debug.log*

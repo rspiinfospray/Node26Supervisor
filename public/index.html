@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>node26Supervisor</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header><div><p class="eyebrow">AUTONOMOUS CORRECTION LOOP</p><h1>node26<span>Supervisor</span></h1></div><div id="connection" class="connection">Connexion…</div></header>
+  <main>
+    <section class="hero card">
+      <div><p class="label">ÉTAT DE LA BOUCLE</p><h2 id="status">Chargement…</h2><p id="message" class="muted"></p></div>
+      <div class="controls">
+        <label>Monde terminé<select id="world"></select></label>
+        <label>Cycles<input id="cycles" type="number" min="1" max="10" value="3"></label>
+        <button id="start">Lancer la boucle</button><button id="resume" class="resume" disabled>Reprendre</button><button id="stop" class="danger">Arrêter</button>
+      </div>
+      <div class="progress"><i id="progress"></i></div>
+    </section>
+    <section class="current-cycle card">
+      <div class="current-cycle-head">
+        <div><p class="label">CYCLE ACTUEL</p><div class="cycle-title"><strong id="cycle">0 / 3</strong><span id="cycleState" class="pill">En attente</span></div></div>
+        <div class="cycle-meta"><span id="cycleElapsed">—</span><small>temps écoulé</small></div>
+      </div>
+      <div id="taskProgress" class="task-progress"><i></i></div>
+      <div id="currentTasks" class="task-list"><p class="muted">Lancez une boucle pour suivre ses sous-tâches.</p></div>
+    </section>
+    <section class="metrics">
+      <article class="card"><p class="label">TAUX DE SURVIE</p><strong id="score">—</strong></article>
+      <article class="card"><p class="label">VERDICT</p><strong id="verdict">—</strong></article>
+      <article class="card"><p class="label">DURÉE</p><strong id="duration">—</strong></article>
+    </section>
+    <section class="grid">
+      <article class="card"><div class="heading"><div><p class="label">CYCLES</p><h3>Historique des correctifs</h3></div></div><div id="cycleList" class="cycle-list"><p class="muted">Aucun cycle.</p></div></article>
+      <article class="card"><div class="heading"><div><p class="label">TEMPS RÉEL</p><h3>Journal d’exécution</h3></div><button id="clear" class="small">Effacer</button></div><div id="events" class="events"></div></article>
+    </section>
+  </main>
+  <dialog id="reportDialog" class="report-dialog">
+    <div class="report-head"><div><p class="label">ANALYSE OPENAI</p><h3 id="reportTitle">Rapport</h3></div><button id="closeReport" class="small" type="button">Fermer</button></div>
+    <div id="reportContent" class="report-markdown">Chargement…</div>
+  </dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

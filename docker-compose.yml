@@ -1,0 +1,34 @@
+services:
+  supervisor:
+    build: .
+    container_name: node26-supervisor
+    environment:
+      PORT: 8090
+      NODE26_API_URL: http://host.docker.internal:8080
+      NODE26_PROJECT_PATH: /workspace/node26
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
+      OPENAI_RESPONSES_ENDPOINT: ${OPENAI_RESPONSES_ENDPOINT:-https://api.openai.com/v1/responses}
+      SUPERVISOR_MAX_CYCLES: ${SUPERVISOR_MAX_CYCLES:-3}
+      SUPERVISOR_POLL_MS: ${SUPERVISOR_POLL_MS:-2000}
+      SUPERVISOR_API_TIMEOUT_MS: ${SUPERVISOR_API_TIMEOUT_MS:-300000}
+      SUPERVISOR_DEPLOY_READY_TIMEOUT_MS: ${SUPERVISOR_DEPLOY_READY_TIMEOUT_MS:-120000}
+      SUPERVISOR_WORLD_TIMEOUT_MS: ${SUPERVISOR_WORLD_TIMEOUT_MS:-900000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../Node26:/workspace/node26
+      - ${CODEX_HOME_ON_HOST:-C:/Users/amne/.codex}:/root/.codex
+      - /var/run/docker.sock:/var/run/docker.sock
+      - supervisor-data:/app/data
+    ports:
+      - "8090:8090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8090/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  supervisor-data:
