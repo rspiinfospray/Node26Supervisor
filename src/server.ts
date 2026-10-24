@@ -27,6 +27,10 @@ app.use(express.static(`${config.projectDirectory}/public`));
 app.get("/api/health", (_request, response) => response.json({ status: "UP", node26ApiUrl: config.node26ApiUrl, node26ProjectPath: config.node26ProjectPath }));
 app.get("/api/worlds", async (_request, response, next) => { try { response.json(await client.listWorlds()); } catch (error) { next(error); } });
 app.get("/api/state", (_request, response) => response.json({ state: supervisor.snapshot(), events: events.recent() }));
+app.get("/api/history", async (request, response, next) => {
+  try { response.json(await supervisor.history(z.object({ worldId: z.string().uuid() }).parse(request.query).worldId)); }
+  catch (error) { next(error); }
+});
 app.get("/api/loops/:loopId/cycles/:cycleNumber/report", async (request, response, next) => {
   try {
     const input = z.object({ loopId: z.string().uuid(), cycleNumber: z.coerce.number().int().min(1) }).parse(request.params);
@@ -37,6 +41,12 @@ app.get("/api/loops/:loopId/cycles/:cycleNumber/correction", async (request, res
   try {
     const input = z.object({ loopId: z.string().uuid(), cycleNumber: z.coerce.number().int().min(1) }).parse(request.params);
     response.type("text/markdown; charset=utf-8").send(await supervisor.correction(input.loopId, input.cycleNumber));
+  } catch (error) { next(error); }
+});
+app.get("/api/loops/:loopId/cycles/:cycleNumber/control-report", async (request, response, next) => {
+  try {
+    const input = z.object({ loopId: z.string().uuid(), cycleNumber: z.coerce.number().int().min(1) }).parse(request.params);
+    response.type("text/markdown; charset=utf-8").send(await supervisor.controlReport(input.loopId, input.cycleNumber));
   } catch (error) { next(error); }
 });
 app.get("/api/events", (_request, response) => events.subscribe(response));

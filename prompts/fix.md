@@ -8,8 +8,8 @@ Voici le rapport comportemental obtenu exclusivement par l’API Node26 :
 
 Objectif :
 
-1. Vérifie les préconisations dans le code et regroupe celles qui ont une cause commune.
-2. Classe-les selon gravité, fréquence, nombre de péons concernés et confiance.
+1. Pour chaque peons dans le rapport tu vas trouver plusieurs preconisations dans la section "6. Préconisations". Vérifie les préconisations dans le code et regroupe celles qui ont une cause commune.
+2. Classe-les selon la "Priorité", fréquence, nombre de péons concernés et confiance.
 3. Implémente jusqu’aux dix corrections prioritaires réellement démontrables.
 4. Ajoute des tests déterministes distincts pour chaque correction.
 5. Exécute les tests pertinents puis la suite complète.

@@ -221,10 +221,17 @@ export class Supervisor {
     }
     if (!after) after = await this.client.analysis(finished.id);
     this.assertAnalysisWorld(after, finished.id, "analyse utilisée pour le rapport suivant");
-    await this.transition("reporting", `Cycle ${number} : préparation du prochain rapport par OpenAI`);
+    this.state.message = `Cycle ${number} : génération du rapport du monde de contrôle`;
+    await this.persist("info", "control-report.started", this.state.message, { worldId: finished.id, cycle: number });
     const [nextDiagnostics, gameRules] = await Promise.all([this.client.diagnostics(finished.id, finished), this.client.configuration()]);
     const nextReport = await this.analyst.behaviorReport(finished, after, nextDiagnostics, gameRules, signal);
-    this.completeCurrentTask(cycle, "Rapport du monde de contrôle généré par OpenAI");
+    if (nextReport.sourceWorldId !== finished.id) throw new Error("Rapport du monde de contrôle associé au mauvais monde");
+    await this.store.saveControlReport(this.state.loopId!, number, nextReport.markdown);
+    await this.store.saveControlOpenAiTrace(this.state.loopId!, number, nextReport.inputArchive);
+    cycle.controlReportAvailable = true;
+    cycle.controlReportHash = hash(nextReport.markdown);
+    cycle.controlOpenAiInputHash = nextReport.inputHash;
+    cycle.controlOpenAiTraceAvailable = true;
     cycle.status = "completed";
     cycle.completedAt = new Date().toISOString();
     await this.persist("success", "cycle.completed", `Cycle ${number} : ${cycle.evaluation?.score ?? "?"} % de survie`, cycle.evaluation);
@@ -260,17 +267,31 @@ export class Supervisor {
   }
 
   public async report(loopId: string, cycleNumber: number): Promise<string> {
-    if (this.state.loopId !== loopId) throw new Error("Boucle introuvable");
-    const cycle = this.state.cycles.find(item => item.number === cycleNumber);
+    const loop = this.state.loopId === loopId ? this.state : await this.store.loadLoop(loopId);
+    const cycle = loop.cycles.find(item => item.number === cycleNumber);
     if (!cycle?.reportAvailable) throw new Error("Rapport OpenAI introuvable pour ce cycle");
     return this.store.readReport(loopId, cycleNumber);
   }
 
   public async correction(loopId: string, cycleNumber: number): Promise<string> {
-    if (this.state.loopId !== loopId) throw new Error("Boucle introuvable");
-    const cycle = this.state.cycles.find(item => item.number === cycleNumber);
+    const loop = this.state.loopId === loopId ? this.state : await this.store.loadLoop(loopId);
+    const cycle = loop.cycles.find(item => item.number === cycleNumber);
     if (!cycle?.correctionAvailable) throw new Error("Compte rendu de correction introuvable pour ce cycle");
     return this.store.readCorrection(loopId, cycleNumber);
+  }
+
+  public async controlReport(loopId: string, cycleNumber: number): Promise<string> {
+    const loop = this.state.loopId === loopId ? this.state : await this.store.loadLoop(loopId);
+    const cycle = loop.cycles.find(item => item.number === cycleNumber);
+    if (!cycle?.controlReportAvailable) throw new Error("Rapport du monde de contrôle introuvable pour ce cycle");
+    return this.store.readControlReport(loopId, cycleNumber);
+  }
+
+  public async history(worldId: string): Promise<SupervisorState[]> {
+    const loops = await this.store.listLoops();
+    if (this.state.loopId && !loops.some(loop => loop.loopId === this.state.loopId)) loops.push(this.snapshot());
+    return loops.filter(loop => loop.activeWorldId === worldId || loop.cycles.some(cycle => cycle.sourceWorldId === worldId || cycle.resultWorldId === worldId))
+      .sort((left, right) => String(right.startedAt).localeCompare(String(left.startedAt)));
   }
 
   private async transition(status: LoopStatus, message: string): Promise<void> {
@@ -320,7 +341,7 @@ function hash(value: unknown): string {
 }
 
 function isCycleTask(status: LoopStatus): status is CycleTaskId {
-  return ["correcting", "testing", "deploying", "simulating", "evaluating", "reporting"].includes(status);
+  return ["correcting", "testing", "deploying", "simulating", "evaluating"].includes(status);
 }
 
 export function createCycleTasks(): CycleTask[] {
@@ -329,8 +350,7 @@ export function createCycleTasks(): CycleTask[] {
     { id: "testing", label: "Compilation & tests", description: "Validation des changements dans Docker", status: "pending" },
     { id: "deploying", label: "Déploiement", description: "Mise à jour du backend Node26", status: "pending" },
     { id: "simulating", label: "Simulation de contrôle", description: "Exécution d'un monde avec la même graine", status: "pending" },
-    { id: "evaluating", label: "Évaluation", description: "Comparaison avant/après et notation", status: "pending" },
-    { id: "reporting", label: "Rapport suivant", description: "Analyse des diagnostics du monde de contrôle par l'API OpenAI", status: "pending" }
+    { id: "evaluating", label: "Évaluation", description: "Comparaison avant/après et notation", status: "pending" }
   ];
 }
 

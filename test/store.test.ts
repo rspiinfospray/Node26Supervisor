@@ -50,3 +50,22 @@ test("archive exactement les données envoyées à OpenAI", async () => {
   await store.saveOpenAiTrace(loopId, 1, trace);
   assert.equal(await store.readOpenAiTrace(loopId, 1), trace);
 });
+
+test("archive les états de boucle pour filtrer l'historique", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "node26-supervisor-"));
+  const store = new StateStore(path.join(directory, "state.json"), 3);
+  const state = store.empty();
+  state.loopId = "123e4567-e89b-12d3-a456-426614174000";
+  state.activeWorldId = "world";
+  await store.save(state);
+  assert.equal((await store.listLoops())[0]?.activeWorldId, "world");
+  assert.equal((await store.loadLoop(state.loopId)).loopId, state.loopId);
+});
+
+test("persiste le rapport du monde de contrôle séparément", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "node26-supervisor-"));
+  const store = new StateStore(path.join(directory, "state.json"), 3);
+  const loopId = "123e4567-e89b-12d3-a456-426614174000";
+  await store.saveControlReport(loopId, 1, "# Rapport final");
+  assert.equal(await store.readControlReport(loopId, 1), "# Rapport final");
+});

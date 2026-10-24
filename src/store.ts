@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SupervisorState, WorldAnalysis } from "./types.js";
 
@@ -11,10 +11,21 @@ export class StateStore {
   }
 
   public async save(state: SupervisorState): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true });
-    const temporary = `${this.file}.tmp`;
-    await writeFile(temporary, JSON.stringify(state, null, 2), "utf8");
-    await rename(temporary, this.file);
+    const serialized = JSON.stringify(state, null, 2);
+    await this.saveArtifact(this.file, serialized);
+    if (state.loopId) await this.saveArtifact(this.loopFile(state.loopId), serialized);
+  }
+
+  public async loadLoop(loopId: string): Promise<SupervisorState> {
+    return JSON.parse(await readFile(this.loopFile(loopId), "utf8")) as SupervisorState;
+  }
+
+  public async listLoops(): Promise<SupervisorState[]> {
+    const directory = path.join(path.dirname(this.file), "loops");
+    try {
+      const files = (await readdir(directory)).filter(file => file.endsWith(".json"));
+      return Promise.all(files.map(async file => JSON.parse(await readFile(path.join(directory, file), "utf8")) as SupervisorState));
+    } catch { return []; }
   }
 
   public async saveReport(loopId: string, cycleNumber: number, markdown: string): Promise<void> {
@@ -57,6 +68,18 @@ export class StateStore {
     return readFile(this.openAiTraceFile(loopId, cycleNumber), "utf8");
   }
 
+  public async saveControlReport(loopId: string, cycleNumber: number, markdown: string): Promise<void> {
+    await this.saveArtifact(this.controlReportFile(loopId, cycleNumber), markdown);
+  }
+
+  public async readControlReport(loopId: string, cycleNumber: number): Promise<string> {
+    return readFile(this.controlReportFile(loopId, cycleNumber), "utf8");
+  }
+
+  public async saveControlOpenAiTrace(loopId: string, cycleNumber: number, trace: string): Promise<void> {
+    await this.saveArtifact(this.controlOpenAiTraceFile(loopId, cycleNumber), trace);
+  }
+
   private reportFile(loopId: string, cycleNumber: number): string {
     if (!/^[0-9a-f-]{36}$/i.test(loopId) || !Number.isInteger(cycleNumber) || cycleNumber < 1) {
       throw new Error("Identifiant de rapport invalide");
@@ -79,6 +102,25 @@ export class StateStore {
   private openAiTraceFile(loopId: string, cycleNumber: number): string {
     if (!/^[0-9a-f-]{36}$/i.test(loopId) || !Number.isInteger(cycleNumber) || cycleNumber < 1) throw new Error("Identifiant de trace OpenAI invalide");
     return path.join(path.dirname(this.file), "openai-inputs", `${loopId}-cycle-${cycleNumber}.json`);
+  }
+
+  private controlReportFile(loopId: string, cycleNumber: number): string {
+    this.validateArtifactId(loopId, cycleNumber);
+    return path.join(path.dirname(this.file), "control-reports", `${loopId}-cycle-${cycleNumber}.md`);
+  }
+
+  private controlOpenAiTraceFile(loopId: string, cycleNumber: number): string {
+    this.validateArtifactId(loopId, cycleNumber);
+    return path.join(path.dirname(this.file), "control-openai-inputs", `${loopId}-cycle-${cycleNumber}.json`);
+  }
+
+  private loopFile(loopId: string): string {
+    if (!/^[0-9a-f-]{36}$/i.test(loopId)) throw new Error("Identifiant de boucle invalide");
+    return path.join(path.dirname(this.file), "loops", `${loopId}.json`);
+  }
+
+  private validateArtifactId(loopId: string, cycleNumber: number): void {
+    if (!/^[0-9a-f-]{36}$/i.test(loopId) || !Number.isInteger(cycleNumber) || cycleNumber < 1) throw new Error("Identifiant d'artefact invalide");
   }
 
   private async saveArtifact(file: string, content: string): Promise<void> {

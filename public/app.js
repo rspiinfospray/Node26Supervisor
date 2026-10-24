@@ -1,5 +1,7 @@
 const $ = selector => document.querySelector(selector);
 let state = null;
+let viewState = null;
+let historyCycles = [];
 let events = [];
 let timer = null;
 
@@ -14,7 +16,20 @@ async function loadWorlds() {
   const worlds = await api('/api/worlds');
   const finished = worlds.filter(world => world.status === 'FINISHED').sort((a,b) => b.sequenceNumber-a.sequenceNumber);
   $('#world').innerHTML = finished.map(world => `<option value="${world.id}">${escapeHtml(world.name)} · round ${world.currentRound}</option>`).join('') || '<option value="">Aucun monde terminé</option>';
+  if (state?.activeWorldId && finished.some(world => world.id === state.activeWorldId)) $('#world').value=state.activeWorldId;
   $('#start').disabled = !finished.length || isRunning();
+  await loadWorldHistory();
+}
+
+async function loadWorldHistory(renderAfter=true) {
+  const worldId=$('#world').value;
+  if(!worldId){ viewState=null; historyCycles=[]; if(renderAfter)render(); return; }
+  const loops=await api(`/api/history?worldId=${encodeURIComponent(worldId)}`);
+  viewState=loops[0] || {status:'idle',message:'Aucune boucle enregistrée pour ce monde',currentCycle:0,maximumCycles:0,startedAt:null,completedAt:null,preparationTasks:[],cycles:[]};
+  historyCycles=loops.flatMap(loop => loop.cycles.map(cycle => ({...cycle,_loopId:loop.loopId,_loopStartedAt:loop.startedAt})))
+    .filter(cycle => cycle.sourceWorldId===worldId || cycle.resultWorldId===worldId)
+    .sort((left,right) => String(right._loopStartedAt).localeCompare(String(left._loopStartedAt)) || right.number-left.number);
+  if(renderAfter)render();
 }
 
 function isRunning() { return state && !['idle','completed','failed','stopped'].includes(state.status); }
@@ -74,17 +89,17 @@ function renderMarkdown(markdown, container) {
   }
 }
 
-function renderCurrentCycle() {
-  const cycle = state.cycles.find(item => item.number === state.currentCycle) || state.cycles.at(-1);
-  const isPreparation = !cycle && (state.preparationTasks?.length || state.status === 'preparing');
-  const preparationTasks = (state.preparationTasks || []).map(task => ({...task,phase:'Préparation'}));
-  const cycleTasks = (cycle?.tasks || []).map(task => ({...task,phase:`Cycle ${cycle.number}`}));
+function renderCurrentCycle(shown) {
+  const cycle = shown.cycles.find(item => item.number === shown.currentCycle) || shown.cycles.at(-1);
+  const isPreparation = !cycle && (shown.preparationTasks?.length || shown.status === 'preparing');
+  const preparationTasks = (shown.preparationTasks || []).map(task => ({...task,phase:'Préparation'}));
+  const cycleTasks = (cycle?.tasks || []).filter(task => task.id !== 'reporting').map(task => ({...task,phase:`Cycle ${cycle.number}`}));
   const tasks = [...preparationTasks,...cycleTasks];
   const completed = tasks.filter(task => task.status === 'completed').length;
-  const displayedStatus = cycle?.status || (isPreparation ? state.status : 'pending');
+  const displayedStatus = cycle?.status || (isPreparation ? shown.status : 'pending');
   $('#cycleState').textContent = ({preparing:'En cours',running:'En cours',completed:'Terminé',failed:'Échec',stopped:'Arrêté',pending:'En attente'})[displayedStatus] || displayedStatus;
   $('#cycleState').className = `pill status-${displayedStatus}`;
-  $('#cycleElapsed').textContent = cycle ? formatDuration(cycle.startedAt,cycle.completedAt) : isPreparation ? formatDuration(state.startedAt,state.completedAt) : '—';
+  $('#cycleElapsed').textContent = cycle ? formatDuration(cycle.startedAt,cycle.completedAt) : isPreparation ? formatDuration(shown.startedAt,shown.completedAt) : '—';
   $('#taskProgress i').style.width = `${tasks.length ? completed/tasks.length*100 : 0}%`;
   $('#currentTasks').innerHTML = tasks.length ? tasks.map((task,index) => {
     const timing = task.status === 'running' ? `Depuis ${formatTime(task.startedAt)} · ${formatDuration(task.startedAt)}` : task.completedAt ? `${formatTime(task.startedAt)} → ${formatTime(task.completedAt)} · ${formatDuration(task.startedAt,task.completedAt)}` : 'En attente';
@@ -95,40 +110,44 @@ function renderCurrentCycle() {
 
 function render() {
   if (!state) return;
-  $('#status').textContent = ({idle:'Prêt',preparing:'Préparation',correcting:'Correction Codex',testing:'Tests',deploying:'Déploiement',simulating:'Simulation',evaluating:'Évaluation',reporting:'Rapport OpenAI',completed:'Terminée',failed:'Échec',stopped:'Arrêtée'})[state.status] || state.status;
-  $('#message').textContent = state.message;
-  $('#cycle').textContent = state.currentCycle === 0 && state.preparationTasks?.length ? 'Préparation' : `${state.currentCycle} / ${state.maximumCycles}`;
-  renderCurrentCycle();
-  $('#progress').style.width = `${state.maximumCycles ? state.currentCycle/state.maximumCycles*100 : 0}%`;
+  const shown=viewState || state;
+  const cycles=historyCycles.length ? historyCycles : shown.cycles;
+  $('#status').textContent = ({idle:'Prêt',preparing:'Préparation',correcting:'Correction Codex',testing:'Tests',deploying:'Déploiement',simulating:'Simulation',evaluating:'Évaluation',reporting:'Rapport OpenAI',completed:'Terminée',failed:'Échec',stopped:'Arrêtée'})[shown.status] || shown.status;
+  $('#message').textContent = shown.message;
+  $('#cycle').textContent = shown.currentCycle === 0 && shown.preparationTasks?.length ? 'Préparation' : `${shown.currentCycle} / ${shown.maximumCycles}`;
+  renderCurrentCycle(shown);
+  $('#progress').style.width = `${shown.maximumCycles ? shown.currentCycle/shown.maximumCycles*100 : 0}%`;
   $('#start').disabled = isRunning() || !$('#world').value;
   $('#resume').disabled = state.status !== 'failed' || !state.cycles.some(cycle => cycle.tasks?.some(task => task.status === 'failed'));
   $('#stop').disabled = !isRunning();
-  const last = [...state.cycles].reverse().find(cycle => cycle.evaluation);
+  const last = cycles.find(cycle => cycle.evaluation);
   $('#score').textContent = last ? `${last.evaluation.score} %` : '—';
   $('#verdict').textContent = last?.evaluation.verdict || '—';
-  $('#duration').textContent = formatDuration(state.startedAt,state.completedAt);
-  $('#cycleList').innerHTML = state.cycles.length ? [...state.cycles].reverse().map(cycle => `<div class="cycle-item"><div class="cycle-top"><div><span class="pill">${escapeHtml(cycle.status)}</span> <b>Cycle ${cycle.number}</b></div><strong class="score">${cycle.evaluation ? cycle.evaluation.score+' %' : '—'}</strong></div><p class="muted">${escapeHtml(cycle.evaluation?.summary || cycle.error || 'Traitement en cours…')}</p><p class="files">${cycle.changedFiles.map(escapeHtml).join(' · ') || 'Aucun fichier recensé'}</p><div class="cycle-actions">${cycle.correctionAvailable ? `<button class="small document-button" data-document="correction" data-cycle="${cycle.number}" type="button">Voir les corrections</button>` : ''}${cycle.reportAvailable ? `<button class="small document-button" data-document="report" data-cycle="${cycle.number}" type="button">Voir le rapport OpenAI</button>` : ''}</div></div>`).join('') : '<p class="muted">Aucun cycle.</p>';
+  $('#duration').textContent = formatDuration(shown.startedAt,shown.completedAt);
+  $('#cycleList').innerHTML = cycles.length ? cycles.map(cycle => { const loopId=cycle._loopId || shown.loopId; return `<div class="cycle-item"><div class="cycle-top"><div><span class="pill">${escapeHtml(cycle.status)}</span> <b>Cycle ${cycle.number}</b></div><strong class="score">${cycle.evaluation ? cycle.evaluation.score+' %' : '—'}</strong></div><p class="muted">${escapeHtml(cycle.evaluation?.summary || cycle.error || 'Traitement en cours…')}</p><p class="files">${cycle.changedFiles.map(escapeHtml).join(' · ') || 'Aucun fichier recensé'}</p><div class="cycle-actions">${cycle.correctionAvailable ? `<button class="small document-button" data-document="correction" data-loop="${loopId}" data-cycle="${cycle.number}" type="button">Voir les corrections</button>` : ''}${cycle.reportAvailable ? `<button class="small document-button" data-document="report" data-loop="${loopId}" data-cycle="${cycle.number}" type="button">Rapport utilisé par Codex</button>` : ''}${cycle.controlReportAvailable ? `<button class="small document-button" data-document="control-report" data-loop="${loopId}" data-cycle="${cycle.number}" type="button">Rapport du monde de contrôle</button>` : ''}</div></div>`; }).join('') : '<p class="muted">Aucun cycle associé à ce monde.</p>';
 }
 
 function renderEvents() {
   $('#events').innerHTML = [...events].reverse().map(event => `<div class="event ${event.level}"><time>${new Date(event.timestamp).toLocaleTimeString('fr-FR')}</time><div><b>${escapeHtml(event.type)}</b><span>${escapeHtml(event.message)}</span></div></div>`).join('');
 }
 
-async function refresh() { const payload=await api('/api/state'); state=payload.state; events=payload.events; render(); renderEvents(); }
-$('#start').addEventListener('click', async () => { try { state=await api('/api/loops',{method:'POST',body:JSON.stringify({worldId:$('#world').value,maximumCycles:Number($('#cycles').value)})}); render(); } catch(error){alert(error.message);} });
+async function refresh() { const payload=await api('/api/state'); state=payload.state; events=payload.events; if($('#world').value)await loadWorldHistory(false); render(); renderEvents(); }
+$('#start').addEventListener('click', async () => { try { state=await api('/api/loops',{method:'POST',body:JSON.stringify({worldId:$('#world').value,maximumCycles:Number($('#cycles').value)})}); viewState=state; historyCycles=state.cycles; render(); } catch(error){alert(error.message);} });
 $('#stop').addEventListener('click', async () => { try { state=await api('/api/loops/stop',{method:'POST'}); render(); } catch(error){alert(error.message);} });
 $('#resume').addEventListener('click', async () => { try { state=await api('/api/loops/resume',{method:'POST'}); render(); } catch(error){alert(error.message);} });
 $('#clear').addEventListener('click', () => { events=[]; renderEvents(); });
+$('#world').addEventListener('change', () => loadWorldHistory().catch(error => alert(error.message)));
 $('#cycleList').addEventListener('click', async event => {
   const button = event.target.closest('.document-button');
-  if (!button || !state.loopId) return;
+  if (!button) return;
+  const loopId=button.dataset.loop;
   const cycleNumber = Number(button.dataset.cycle);
   const documentType = button.dataset.document;
-  $('#reportTitle').textContent = documentType === 'correction' ? `Corrections apportées au cycle ${cycleNumber}` : `Rapport utilisé pour le cycle ${cycleNumber}`;
+  $('#reportTitle').textContent = documentType === 'correction' ? `Corrections apportées au cycle ${cycleNumber}` : documentType === 'control-report' ? `Rapport du monde de contrôle · cycle ${cycleNumber}` : `Rapport utilisé par Codex · cycle ${cycleNumber}`;
   $('#reportContent').textContent = 'Chargement…';
   $('#reportDialog').showModal();
   try {
-    const response = await fetch(`/api/loops/${encodeURIComponent(state.loopId)}/cycles/${cycleNumber}/${documentType}`);
+    const response = await fetch(`/api/loops/${encodeURIComponent(loopId)}/cycles/${cycleNumber}/${documentType}`);
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || `HTTP ${response.status}`);
     renderMarkdown(await response.text(), $('#reportContent'));
   } catch (error) { $('#reportContent').textContent = `Impossible de charger le rapport : ${error.message}`; }
@@ -141,5 +160,6 @@ source.addEventListener('open', () => { $('#connection').textContent='Connecté'
 source.addEventListener('error', () => { $('#connection').textContent='Reconnexion…'; $('#connection').classList.remove('ok'); });
 source.addEventListener('supervisor-event', async event => { events.push(JSON.parse(event.data)); if(events.length>500)events.shift(); renderEvents(); await refresh(); });
 
-await Promise.all([refresh(),loadWorlds()]);
+await refresh();
+await loadWorlds();
 timer=setInterval(() => { render(); },1000);

@@ -4,7 +4,7 @@ import { createCycleTasks, createPreparationTasks } from "../src/supervisor.js";
 
 test("crée la chronologie complète d'un cycle", () => {
   const tasks = createCycleTasks();
-  assert.deepEqual(tasks.map(task => task.id), ["correcting", "testing", "deploying", "simulating", "evaluating", "reporting"]);
+  assert.deepEqual(tasks.map(task => task.id), ["correcting", "testing", "deploying", "simulating", "evaluating"]);
   assert.ok(tasks.every(task => task.status === "pending"));
   assert.ok(tasks.every(task => task.label.length > 0 && task.description.length > 0));
 });

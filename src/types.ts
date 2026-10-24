@@ -40,7 +40,7 @@ export interface Evaluation {
 }
 
 export type PreparationTaskId = "loading-world" | "loading-analysis" | "loading-diagnostics" | "generating-report";
-export type CycleTaskId = "correcting" | "testing" | "deploying" | "simulating" | "evaluating" | "reporting";
+export type CycleTaskId = "correcting" | "testing" | "deploying" | "simulating" | "evaluating";
 export type CycleTaskStatus = "pending" | "running" | "completed" | "failed" | "stopped";
 
 export interface CycleTask {
@@ -81,6 +81,10 @@ export interface CycleRecord {
   openAiModel?: string;
   codeBeforeHash?: string;
   codeAfterHash?: string;
+  controlReportAvailable?: boolean;
+  controlReportHash?: string;
+  controlOpenAiInputHash?: string;
+  controlOpenAiTraceAvailable?: boolean;
   codexSummary?: string;
   evaluation?: Evaluation;
   error?: string;
