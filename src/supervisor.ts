@@ -97,9 +97,9 @@ export class Supervisor {
     try {
       const world = await this.runPreparationTask("loading-world", () => this.client.world(sourceWorldId));
       if (world.status !== "FINISHED") throw new Error("La boucle ne peut partir que d'un monde terminé");
-      let baseline = await this.runPreparationTask("loading-analysis", () => this.client.analysis(sourceWorldId));
-      const [diagnostics, gameRules] = await this.runPreparationTask("loading-diagnostics", () => Promise.all([this.client.diagnostics(sourceWorldId, world), this.client.configuration()]));
-      let report = await this.runPreparationTask("generating-report", () => this.analyst.behaviorReport(world, baseline, diagnostics, gameRules, signal));
+      const [baseline, analysisContext] = await this.runPreparationTask("loading-analysis", () => Promise.all([this.client.analysis(sourceWorldId), this.client.analysisContext(sourceWorldId)]));
+      const [deathContexts, gameRules] = await this.runPreparationTask("loading-diagnostics", () => Promise.all([this.client.deathContexts(sourceWorldId), this.client.configuration()]));
+      let report = await this.runPreparationTask("generating-report", () => this.analyst.behaviorReport(analysisContext, deathContexts, gameRules, signal));
       await this.runCycles(sourceWorldId, baseline, report, 1, signal);
       await this.transition("completed", `Boucle terminée après ${this.state.maximumCycles} cycle(s)`);
     } catch (error) {
@@ -223,8 +223,8 @@ export class Supervisor {
     this.assertAnalysisWorld(after, finished.id, "analyse utilisée pour le rapport suivant");
     this.state.message = `Cycle ${number} : génération du rapport du monde de contrôle`;
     await this.persist("info", "control-report.started", this.state.message, { worldId: finished.id, cycle: number });
-    const [nextDiagnostics, gameRules] = await Promise.all([this.client.diagnostics(finished.id, finished), this.client.configuration()]);
-    const nextReport = await this.analyst.behaviorReport(finished, after, nextDiagnostics, gameRules, signal);
+    const [nextContext, nextDeathContexts, gameRules] = await Promise.all([this.client.analysisContext(finished.id), this.client.deathContexts(finished.id), this.client.configuration()]);
+    const nextReport = await this.analyst.behaviorReport(nextContext, nextDeathContexts, gameRules, signal);
     if (nextReport.sourceWorldId !== finished.id) throw new Error("Rapport du monde de contrôle associé au mauvais monde");
     await this.store.saveControlReport(this.state.loopId!, number, nextReport.markdown);
     await this.store.saveControlOpenAiTrace(this.state.loopId!, number, nextReport.inputArchive);
@@ -357,8 +357,8 @@ export function createCycleTasks(): CycleTask[] {
 export function createPreparationTasks(): PreparationTask[] {
   return [
     { id: "loading-world", label: "Chargement du monde", description: "Lecture et validation du monde source via l'API Node26", status: "pending" },
-    { id: "loading-analysis", label: "Analyse initiale", description: "Calcul des métriques de référence du monde", status: "pending" },
-    { id: "loading-diagnostics", label: "Diagnostics des péons", description: "Lecture des synthèses comportementales via l'API Node26", status: "pending" },
+    { id: "loading-analysis", label: "Analyse initiale", description: "Lecture des métriques et du contexte compact du monde", status: "pending" },
+    { id: "loading-diagnostics", label: "Contextes de décès", description: "Lecture des contextes compacts des péons morts via l'API Node26", status: "pending" },
     { id: "generating-report", label: "Rapport OpenAI", description: "Analyse des données Node26 avec le modèle configuré", status: "pending" }
   ];
 }

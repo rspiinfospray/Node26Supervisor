@@ -11,7 +11,7 @@ import { Supervisor } from "./supervisor.js";
 import { Workspace } from "./workspace.js";
 
 const events = new EventHub();
-const client = new Node26Client(config.node26ApiUrl, config.apiTimeoutMs);
+const client = new Node26Client(config.node26ApiUrl, config.apiTimeoutMs, config.deathContextSequenceLimit);
 const analyst = new OpenAiAnalyst(config.openAiApiKey, config.openAiModel, config.openAiEndpoint, config.apiTimeoutMs, config.openAiPromptFile, events);
 const workspace = new Workspace(config.node26ProjectPath);
 const codex = new CodexAgent(config.node26ProjectPath, config.promptFile, events);

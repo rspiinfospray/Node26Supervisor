@@ -5,7 +5,10 @@ Rédige en français uniquement la section Markdown consacrée au péon fourni.
 
 - Appuie chaque constat sur les données du diagnostic.
 - Distingue explicitement les faits des hypothèses.
-- Analyse la cohérence entre sa personnalité, sa stratégie à long terme, ses décisions et leurs résultats.
+- Analyse la cohérence entre ses décisions récentes, leurs effets sur ses points de vie et la cause de sa mort.
+- Utilise l’état précédant chaque décision, son résultat et la meilleure alternative rejetée pour évaluer si un meilleur choix était réellement disponible.
+- Utilise le résumé de vie pour distinguer un incident isolé d’un comportement récurrent.
+- Pour une mort par attaque, confronte le contexte tactique fatal aux règles de combat et à la connaissance que la victime avait de l’attaquant.
 - Fais ressortir les comportements irrationnels, les occasions manquées, les boucles, les décisions ayant menacé sa survie et les défauts probables du moteur.
 - Propose des préconisations concrètes, priorisées et testables pour améliorer les règles ou le moteur de décision.
 - N’invente aucun événement.
@@ -25,15 +28,9 @@ Ne répète pas de titre de niveau 1 et ne place pas le résultat dans un bloc d
 <input>
 Analyse le dossier comportemental suivant.
 
-CONTEXTE_MONDE={{WORLD_CONTEXT}}
+CONTEXTE_MONDE_COMPACT={{WORLD_CONTEXT}}
 
 REGLES_DU_JEU={{GAME_RULES}}
 
-ANALYSE_GLOBALE={{WORLD_ANALYSIS}}
-
-ETAT_FINAL_DU_PEON={{PEON_FINAL_STATE}}
-
-EVENEMENTS_DIAGNOSTIQUES={{DIAGNOSTIC_EVENTS}}
-
-SYNTHESE_DIAGNOSTIQUE={{DIAGNOSTIC_SUMMARY}}
+CONTEXTE_DECES_PEON={{DEATH_CONTEXT}}
 </input>

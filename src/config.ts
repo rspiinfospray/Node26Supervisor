@@ -20,6 +20,7 @@ export const config = {
   openAiApiKey: process.env.OPENAI_API_KEY ?? "",
   openAiModel: process.env.OPENAI_MODEL ?? "gpt-6-luna",
   openAiEndpoint: process.env.OPENAI_RESPONSES_ENDPOINT ?? "https://api.openai.com/v1/responses",
+  deathContextSequenceLimit: Math.min(100, positiveInteger(process.env.SUPERVISOR_DEATH_CONTEXT_SEQUENCE_LIMIT, 20)),
   worldTimeoutMs: positiveInteger(process.env.SUPERVISOR_WORLD_TIMEOUT_MS, 900_000),
   stateFile: path.join(projectDirectory, "data", "state.json"),
   promptFile: path.join(projectDirectory, "prompts", "fix.md"),

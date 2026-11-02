@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { EventHub } from "./events.js";
-import type { PeonAnalysisDossier, WorldAnalysis, WorldSummary } from "./types.js";
+import type { PeonDeathContext, WorldAnalysisContext } from "./types.js";
 
 interface ResponsesApiResponse {
   id?: string;
@@ -16,35 +16,32 @@ export class OpenAiAnalyst {
     private readonly timeoutMs: number, private readonly promptFile: string, private readonly events: EventHub
   ) {}
 
-  public async behaviorReport(world: WorldSummary, analysis: WorldAnalysis, dossiers: PeonAnalysisDossier[], gameRules: Record<string, unknown>, signal: AbortSignal): Promise<GeneratedBehaviorReport> {
+  public async behaviorReport(worldContext: WorldAnalysisContext, deathContexts: PeonDeathContext[], gameRules: Record<string, unknown>, signal: AbortSignal): Promise<GeneratedBehaviorReport> {
     if (!this.apiKey.trim()) throw new Error("OPENAI_API_KEY n'est pas configurée dans le superviseur");
-    const worldContext = this.worldContext(world, analysis);
     const template = await readFile(this.promptFile, "utf8");
     const { instructions, inputTemplate } = parsePromptTemplate(template);
-    this.events.emit("info", "openai.analysis.started", `Analyse comportementale détaillée de ${dossiers.length} péon(s) avec ${this.model}`);
+    this.events.emit("info", "openai.analysis.started", `Analyse des causes de décès de ${deathContexts.length} péon(s) avec ${this.model}`);
     const sections: string[] = [];
     const serializedInputs: string[] = [];
-    for (const [index, dossier] of dossiers.entries()) {
+    for (const [index, deathContext] of deathContexts.entries()) {
       if (signal.aborted) throw new Error("Boucle arrêtée par l'utilisateur");
-      const peonName = String(dossier.peonFinalState.firstName ?? dossier.peonFinalState.id ?? `Péon ${index + 1}`);
-      this.events.emit("info", "openai.analysis.peon", `Analyse OpenAI de ${peonName} (${index + 1}/${dossiers.length})`);
+      const peonName = String(deathContext.peon.name ?? deathContext.peon.id ?? `Péon ${index + 1}`);
+      this.events.emit("info", "openai.analysis.peon", `Analyse OpenAI de ${peonName} (${index + 1}/${deathContexts.length})`);
       const input = inputTemplate
         .replaceAll("{{WORLD_CONTEXT}}", JSON.stringify(worldContext))
         .replaceAll("{{GAME_RULES}}", JSON.stringify(gameRules))
-        .replaceAll("{{WORLD_ANALYSIS}}", JSON.stringify(analysis))
-        .replaceAll("{{PEON_FINAL_STATE}}", JSON.stringify(dossier.peonFinalState))
-        .replaceAll("{{DIAGNOSTIC_EVENTS}}", JSON.stringify(dossier.diagnosticEvents))
-        .replaceAll("{{DIAGNOSTIC_SUMMARY}}", JSON.stringify(dossier.diagnosticSummary));
+        .replaceAll("{{DEATH_CONTEXT}}", JSON.stringify(deathContext));
       serializedInputs.push(input);
       sections.push(`## ${peonName}\n\n${await this.request(instructions, input, signal)}`);
     }
-    const report = `# Analyse comportementale du monde ${world.name}\n\n- Identifiant : \`${world.id}\`\n- Fin de simulation : tour ${world.currentRound} sur ${world.maxRounds}\n- Péons : ${analysis.totalPeons}, survivants : ${analysis.alivePeons}\n- Événements analysés : ${analysis.totalEvents}\n- Modèle OpenAI : \`${this.model}\`\n\n${sections.join("\n\n")}`;
-    this.events.emit("success", "openai.analysis.completed", `Rapport Markdown détaillé généré avec ${this.model}`, { peons: dossiers.length, model: this.model });
-    const inputArchive = JSON.stringify({ sourceWorldId: world.id, sourceSequenceNumber: Number(world.sequenceNumber), model: this.model, prompt: template, inputs: serializedInputs }, null, 2);
+    const reportBody = sections.length > 0 ? sections.join("\n\n") : "Aucun décès à analyser dans ce monde.";
+    const report = `# Analyse comportementale du monde ${worldContext.name}\n\n- Identifiant : \`${worldContext.id}\`\n- Fin de simulation : tour ${worldContext.simulation.currentRound} sur ${worldContext.simulation.maxRounds}\n- Péons : ${worldContext.population.totalPeons}, survivants : ${worldContext.population.alivePeons}\n- Décès analysés : ${deathContexts.length}\n- Modèle OpenAI : \`${this.model}\`\n\n${reportBody}`;
+    this.events.emit("success", "openai.analysis.completed", `Rapport Markdown détaillé généré avec ${this.model}`, { peons: deathContexts.length, model: this.model });
+    const inputArchive = JSON.stringify({ sourceWorldId: worldContext.id, sourceSequenceNumber: Number(worldContext.simulation.sequenceNumber), model: this.model, prompt: template, inputs: serializedInputs }, null, 2);
     return {
       markdown: report,
-      sourceWorldId: world.id,
-      sourceSequenceNumber: Number(world.sequenceNumber),
+      sourceWorldId: worldContext.id,
+      sourceSequenceNumber: Number(worldContext.simulation.sequenceNumber),
       inputHash: sha256(inputArchive),
       inputArchive,
       promptHash: sha256(template),
@@ -72,35 +69,6 @@ export class OpenAiAnalyst {
     const report = extractOutputText(payload);
     if (!report) throw new Error("L'API OpenAI n'a produit aucun rapport textuel");
     return report;
-  }
-
-  private worldContext(world: WorldSummary, analysis: WorldAnalysis): Record<string, unknown> {
-    return {
-      id: world.id,
-      name: world.name,
-      dimensions: { width: world.width, height: world.height },
-      generation: {
-        seed: world.seed,
-        rockPercentage: world.rockPercentage,
-        treePercentage: world.treePercentage,
-        foodCellPercentage: world.foodCellPercentage,
-        initialSheep: world.sheepCount,
-        riverGenerationEnabled: world.riverGenerationEnabled
-      },
-      endState: {
-        round: world.currentRound,
-        maxRounds: world.maxRounds,
-        sequence: world.sequenceNumber,
-        alivePeons: analysis.alivePeons,
-        totalPeons: analysis.totalPeons
-      },
-      teams: world.teams,
-      houses: world.houses,
-      granaries: world.granaries,
-      fields: world.wheatFields,
-      remainingSheep: world.sheep,
-      eventCounts: analysis.eventsByType
-    };
   }
 
   private safeApiError(text: string): string {

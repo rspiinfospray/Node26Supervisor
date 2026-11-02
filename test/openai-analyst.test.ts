@@ -20,7 +20,7 @@ test("sépare les instructions et les données du prompt OpenAI", () => {
   assert.deepEqual(parsePromptTemplate("<instructions>Consignes</instructions>\n<input>Données</input>"), { instructions: "Consignes", inputTemplate: "Données" });
 });
 
-test("transmet à OpenAI le contexte historique complet de chaque péon", async () => {
+test("transmet à OpenAI uniquement le contexte compact du monde et du décès", async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<Record<string, unknown>> = [];
   globalThis.fetch = (async (_url, options) => {
@@ -29,15 +29,14 @@ test("transmet à OpenAI le contexte historique complet de chaque péon", async 
   }) as typeof fetch;
   try {
     const analyst = new OpenAiAnalyst("key", "model", "https://openai.test", 1_000, "prompts/openia.md", new EventHub());
-    const world = { id: "world", name: "Monde", status: "FINISHED", currentRound: 80, maxRounds: 80, sequenceNumber: 12, width: 50, height: 40, seed: 7, rockPercentage: 20, treePercentage: 15, foodCellPercentage: 10, sheepCount: 4, riverGenerationEnabled: true, teams: {}, houses: { house: {} }, granaries: {}, wheatFields: {}, sheep: {} };
-    const analysis = { worldId: "world", status: "FINISHED", currentRound: 80, maxRounds: 80, totalEvents: 12, totalActions: 4, totalPeons: 1, alivePeons: 1, deadPeons: 0, behavioralTrends: [], eventsByType: { PEON_DECISION_MADE: 4 } };
-    const dossier = { peonFinalState: { id: "peon", firstName: "Ada", personality: { courage: 0.8 }, mentalMap: { "0:0": {} }, actionHistory: [{ reward: 2 }] }, diagnosticEvents: [{ sequenceNumber: 1, eventType: "PEON_DECISION_MADE" }], diagnosticSummary: { anomalies: [] } };
-    const report = await analyst.behaviorReport(world, analysis, [dossier], { moveHealthCost: 5 }, new AbortController().signal);
+    const context = { id: "world", name: "Monde", status: "FINISHED", simulation: { currentRound: 80, maxRounds: 80, sequenceNumber: 12 }, population: { totalPeons: 1, alivePeons: 0, deadPeons: 1 }, dimensions: { width: 50, height: 40 } };
+    const deathContext = { worldId: "world", peon: { id: "peon", name: "Ada", teamId: "team" }, window: { fromSequence: 1, toSequence: 12, deathSequence: 12, deathRound: 80, sequenceCount: 2, peonActionCount: 1, sequences: [1, 12] }, death: { reason: "HUNGER", attackerPeonId: null, attackerName: null, position: null }, healthEvolution: [{ cause: "HUNGER" }], decisions: [{ action: "SE_DEPLACER" }], relevantRules: { hungerHealthLossPerTurn: 5 } };
+    const report = await analyst.behaviorReport(context, [deathContext], { hungerHealthLossPerTurn: 5 }, new AbortController().signal);
     const input = String(requests[0]?.input);
-    assert.match(input, /REGLES_DU_JEU=\{"moveHealthCost":5\}/);
-    assert.match(input, /ETAT_FINAL_DU_PEON=.*"firstName":"Ada"/);
-    assert.match(input, /EVENEMENTS_DIAGNOSTIQUES=.*PEON_DECISION_MADE/);
-    assert.match(input, /SYNTHESE_DIAGNOSTIQUE=\{"anomalies":\[\]\}/);
+    assert.match(input, /CONTEXTE_MONDE_COMPACT=.*"name":"Monde"/);
+    assert.match(input, /REGLES_DU_JEU=\{"hungerHealthLossPerTurn":5\}/);
+    assert.match(input, /CONTEXTE_DECES_PEON=.*"reason":"HUNGER"/);
+    assert.doesNotMatch(input, /PEON_FINAL_STATE|DIAGNOSTIC_EVENTS/);
     assert.match(String(requests[0]?.instructions), /Chronologie comportementale/);
     assert.match(report.markdown, /## Ada/);
     assert.equal(report.sourceWorldId, "world");

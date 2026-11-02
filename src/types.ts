@@ -24,10 +24,30 @@ export interface WorldAnalysis {
   [key: string]: unknown;
 }
 
-export interface PeonAnalysisDossier {
-  peonFinalState: Record<string, unknown>;
-  diagnosticEvents: unknown[];
-  diagnosticSummary: unknown;
+export interface WorldAnalysisContext {
+  id: string;
+  name: string;
+  status: string;
+  simulation: { currentRound: number; maxRounds: number; sequenceNumber: number };
+  population: { totalPeons: number; alivePeons: number; deadPeons: number };
+  [key: string]: unknown;
+}
+
+export interface PeonSummary {
+  id: string;
+  name: string;
+  status: "VIVANT" | "MORT";
+  deathSequence: number | null;
+}
+
+export interface PeonDeathContext {
+  worldId: string;
+  peon: { id: string; name: string; teamId: string };
+  window: { fromSequence: number; toSequence: number; deathSequence: number; deathRound: number; sequenceCount: number; peonActionCount: number; sequences: number[] };
+  death: { reason: string; attackerPeonId: string | null; attackerName: string | null; position: unknown };
+  healthEvolution: unknown[];
+  decisions: unknown[];
+  relevantRules: Record<string, number>;
 }
 
 export interface Evaluation {

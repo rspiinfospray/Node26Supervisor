@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Node26Client } from "../src/node26-client.js";
+import { controlWorldName, Node26Client } from "../src/node26-client.js";
+
+test("construit un nom de monde de contrôle borné sans accumuler les suffixes des cycles", () => {
+  const previous = "iter-supervisor-1-252957-supervisor-2-817989-supervisor-3-136151";
+  assert.equal(controlWorldName(previous, 4, 1_725_578_781), "iter-supervisor-4-578781");
+  const longName = "monde-".repeat(20);
+  const generated = controlWorldName(longName, 12, 1_725_578_781);
+  assert.equal(generated.length, 80);
+  assert.match(generated, /-supervisor-12-578781$/u);
+});
 
 test("attend que Node26 soit réellement disponible après le déploiement", async () => {
   const originalFetch = globalThis.fetch;
@@ -17,23 +26,22 @@ test("attend que Node26 soit réellement disponible après le déploiement", asy
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test("construit un dossier détaillé avec état final, événements et synthèse", async () => {
+test("charge uniquement les contextes compacts des péons morts", async () => {
   const originalFetch = globalThis.fetch;
   const routes: string[] = [];
   globalThis.fetch = (async input => {
     const route = String(input);
     routes.push(route);
-    if (route.includes("/events?")) return new Response(JSON.stringify([{ sequenceNumber: 4, eventType: "PEON_DECISION_MADE" }]), { status: 200 });
-    if (route.endsWith("/diagnostic/summary")) return new Response(JSON.stringify({ worldId: "world-1", peonId: "peon-1", anomalies: [{ type: "DEATH" }] }), { status: 200 });
+    if (route.endsWith("/peons")) return new Response(JSON.stringify([{ id: "peon-1", name: "Ada", status: "MORT", deathSequence: 4 }, { id: "peon-2", name: "Bob", status: "VIVANT", deathSequence: null }]), { status: 200 });
+    if (route.includes("/peons/peon-1/death-context?sequenceLimit=12")) return new Response(JSON.stringify({ worldId: "world-1", peon: { id: "peon-1", name: "Ada", teamId: "team-1" }, window: { sequenceCount: 12 }, death: { reason: "HUNGER" }, healthEvolution: [], decisions: [], relevantRules: {} }), { status: 200 });
     throw new Error(`Route inattendue : ${route}`);
   }) as typeof fetch;
   try {
-    const client = new Node26Client("http://node26.test", 100);
-    const peon = { id: "peon-1", firstName: "Ada", mentalMap: { "0:0": {} }, actionHistory: [{ reward: 1 }] };
-    const dossiers = await client.diagnostics("world-1", { id: "world-1", name: "Monde", status: "FINISHED", currentRound: 10, maxRounds: 10, sequenceNumber: 4, peons: { one: peon } });
-    assert.deepEqual(dossiers[0]?.peonFinalState, peon);
-    assert.equal(dossiers[0]?.diagnosticEvents.length, 1);
-    assert.deepEqual(dossiers[0]?.diagnosticSummary, { worldId: "world-1", peonId: "peon-1", anomalies: [{ type: "DEATH" }] });
-    assert.ok(routes.some(route => route.includes("limit=2000&peonId=peon-1")));
+    const client = new Node26Client("http://node26.test", 100, 12);
+    const contexts = await client.deathContexts("world-1");
+    assert.equal(contexts.length, 1);
+    assert.equal(contexts[0]?.peon.id, "peon-1");
+    assert.ok(routes.some(route => route.includes("death-context?sequenceLimit=12")));
+    assert.ok(!routes.some(route => route.includes("peon-2/death-context")));
   } finally { globalThis.fetch = originalFetch; }
 });

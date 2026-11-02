@@ -28,7 +28,7 @@ docker compose down
 ## Déroulement d'un cycle
 
 1. Sélection d'un monde terminé dans l'interface.
-2. Lecture du monde, de l'analyse et des diagnostics via l'API Node26.
+2. Lecture du contexte compact du monde et des contextes de décès via l'API Node26.
 3. Génération du rapport comportemental par l'API OpenAI Responses avec le modèle configuré.
 4. Lecture du rapport et correction du dépôt local Node26 par le SDK Codex.
 4. Compilation et tests via `docker compose build backend`.
@@ -47,3 +47,14 @@ docker compose down
 - Revue qualitative Codex : 20 points
 
 Le superviseur ne réinitialise jamais automatiquement Git lorsqu'un score est faible, afin de préserver les modifications utilisateur. Il signale la régression dans l'interface.
+
+## API Node26 utilisées pour l'analyse OpenAI
+
+Les données envoyées à OpenAI proviennent uniquement des endpoints compacts suivants :
+
+- `GET /api/worlds/{worldId}/analysis-context` pour le contexte général du monde ;
+- `GET /api/worlds/{worldId}/peons` pour identifier les péons morts ;
+- `GET /api/worlds/{worldId}/peons/{peonId}/death-context?sequenceLimit=20` pour les décisions contextualisées, alternatives rejetées, résumé de vie, contexte tactique, variations de santé, règles pertinentes et cause du décès.
+- `GET /api/config` pour fournir au modèle l'ensemble des règles configurées du jeu.
+
+Le nombre de séquences est configurable avec `SUPERVISOR_DEATH_CONTEXT_SEQUENCE_LIMIT`, entre `1` et `100`, avec `20` par défaut. Le monde complet et l'analyse détaillée restent utilisés par l'orchestration et l'évaluation locale, mais ne sont plus intégrés aux prompts OpenAI.

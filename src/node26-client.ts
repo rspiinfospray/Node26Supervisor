@@ -1,7 +1,7 @@
-import type { PeonAnalysisDossier, WorldAnalysis, WorldSummary } from "./types.js";
+import type { PeonDeathContext, PeonSummary, WorldAnalysis, WorldAnalysisContext, WorldSummary } from "./types.js";
 
 export class Node26Client {
-  public constructor(private readonly baseUrl: string, private readonly timeoutMs = 300_000) {}
+  public constructor(private readonly baseUrl: string, private readonly timeoutMs = 300_000, private readonly deathContextSequenceLimit = 20) {}
 
   public listWorlds(): Promise<WorldSummary[]> { return this.request("GET", "/api/worlds"); }
   public async world(id: string): Promise<WorldSummary> {
@@ -14,36 +14,30 @@ export class Node26Client {
     if (analysis.worldId !== id) throw new Error(`API Node26 : analyse attendue pour ${id}, reçue pour ${analysis.worldId}`);
     return analysis;
   }
-  public configuration(): Promise<Record<string, unknown>> { return this.request("GET", "/api/config"); }
-
-  public async diagnostics(id: string, world: WorldSummary): Promise<PeonAnalysisDossier[]> {
-    const peons = Object.values(world.peons as Record<string, Record<string, unknown> & { id: string }>);
-    return Promise.all(peons.map(async peon => {
-      const diagnosticEvents = await this.peonEvents(id, peon.id);
-      const diagnosticSummary = await this.request<Record<string, unknown>>("GET", `/api/worlds/${id}/peons/${peon.id}/diagnostic/summary`);
-      if (diagnosticSummary.worldId !== id || diagnosticSummary.peonId !== peon.id) throw new Error(`Diagnostic incohérent pour le péon ${peon.id} du monde ${id}`);
-      return { peonFinalState: peon, diagnosticEvents, diagnosticSummary };
-    }));
+  public async analysisContext(id: string): Promise<WorldAnalysisContext> {
+    const context = await this.request<WorldAnalysisContext>("GET", `/api/worlds/${id}/analysis-context`);
+    if (context.id !== id) throw new Error(`API Node26 : contexte attendu pour ${id}, reçu pour ${context.id}`);
+    return context;
   }
 
-  private async peonEvents(worldId: string, peonId: string): Promise<unknown[]> {
-    const events: Array<Record<string, unknown>> = [];
-    let after = 0;
-    while (true) {
-      const page = await this.request<Array<Record<string, unknown>>>("GET", `/api/worlds/${worldId}/events?after=${after}&limit=2000&peonId=${peonId}`);
-      events.push(...page);
-      if (page.length < 2000) return events;
-      const lastSequence = Number(page.at(-1)?.sequenceNumber);
-      if (!Number.isFinite(lastSequence) || lastSequence <= after) throw new Error(`Pagination des événements bloquée pour le péon ${peonId}`);
-      after = lastSequence;
-    }
+  public configuration(): Promise<Record<string, unknown>> { return this.request("GET", "/api/config"); }
+
+  public peons(id: string): Promise<PeonSummary[]> { return this.request("GET", `/api/worlds/${id}/peons`); }
+
+  public async deathContexts(id: string): Promise<PeonDeathContext[]> {
+    const deadPeons = (await this.peons(id)).filter(peon => peon.status === "MORT");
+    return Promise.all(deadPeons.map(async peon => {
+      const context = await this.request<PeonDeathContext>("GET", `/api/worlds/${id}/peons/${peon.id}/death-context?sequenceLimit=${this.deathContextSequenceLimit}`);
+      if (context.worldId !== id || context.peon.id !== peon.id) throw new Error(`Contexte de décès incohérent pour le péon ${peon.id} du monde ${id}`);
+      return context;
+    }));
   }
 
   public async createAndStartFrom(template: WorldSummary, cycle: number): Promise<WorldSummary> {
     const teams = Object.values(template.teams as Record<string, { id: string; name: string }>);
     const peons = Object.values(template.peons as Record<string, { teamId: string }>);
     const body = {
-      name: `${template.name}-supervisor-${cycle}-${Date.now().toString().slice(-6)}`,
+      name: controlWorldName(template.name, cycle),
       width: template.width, height: template.height, rockPercentage: template.rockPercentage,
       generateRiver: template.riverGenerationEnabled, treePercentage: template.treePercentage,
       foodCellPercentage: template.foodCellPercentage, minFoodPerCell: template.minFoodPerCell,
@@ -103,6 +97,12 @@ export class Node26Client {
     if (!response.ok) throw new Error(`API Node26 ${method} ${route} (${response.status}) : ${text}`);
     return (text ? JSON.parse(text) : undefined) as T;
   }
+}
+
+export function controlWorldName(templateName: string, cycle: number, timestamp = Date.now()): string {
+  const suffix = `-supervisor-${cycle}-${timestamp.toString().slice(-6)}`;
+  const rootName = templateName.replace(/(?:-supervisor-\d+-\d{6})+$/u, "");
+  return `${rootName.slice(0, Math.max(0, 80 - suffix.length))}${suffix}`;
 }
 
 function networkErrorMessage(error: unknown): string {
